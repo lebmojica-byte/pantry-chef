@@ -1,0 +1,168 @@
+@import "tailwindcss";
+@import "@fontsource-variable/bricolage-grotesque";
+
+/* Palette: OKLCH, every text pair checked for WCAG AA in both modes. */
+:root {
+  color-scheme: light dark;
+  --bg: oklch(1 0 0);
+  --surface: oklch(0.975 0.006 35);
+  --surface-2: oklch(0.95 0.008 35);
+  --line: oklch(0.9 0.012 35);
+  --ink: oklch(0.23 0.02 35);
+  --muted: oklch(0.48 0.02 35);
+
+  --tomato: oklch(0.585 0.2 33);
+  --tomato-deep: oklch(0.47 0.17 33);
+  --tomato-soft: oklch(0.95 0.035 35);
+  --tomato-ink: oklch(0.45 0.16 33);
+
+  --lime: oklch(0.88 0.18 128);
+  --lime-deep: oklch(0.72 0.17 128);
+  --lime-ink: oklch(0.3 0.08 130);
+
+  --fridge-soft: oklch(0.94 0.04 240);
+  --fridge-ink: oklch(0.42 0.12 245);
+  --pantry-soft: oklch(0.94 0.06 85);
+  --pantry-ink: oklch(0.45 0.09 70);
+  --herb-soft: oklch(0.94 0.08 130);
+  --herb-ink: oklch(0.42 0.11 140);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.17 0 0);
+    --surface: oklch(0.22 0.006 35);
+    --surface-2: oklch(0.26 0.008 35);
+    --line: oklch(0.32 0.01 35);
+    --ink: oklch(0.96 0.005 35);
+    --muted: oklch(0.74 0.012 35);
+
+    --tomato-deep: oklch(0.42 0.15 33);
+    --tomato-soft: oklch(0.29 0.06 33);
+    --tomato-ink: oklch(0.85 0.09 35);
+
+    --lime-deep: oklch(0.62 0.15 128);
+
+    --fridge-soft: oklch(0.29 0.05 245);
+    --fridge-ink: oklch(0.86 0.07 240);
+    --pantry-soft: oklch(0.3 0.05 80);
+    --pantry-ink: oklch(0.88 0.08 85);
+    --herb-soft: oklch(0.3 0.06 135);
+    --herb-ink: oklch(0.88 0.12 130);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-tomato: var(--tomato);
+  --color-tomato-deep: var(--tomato-deep);
+  --color-tomato-soft: var(--tomato-soft);
+  --color-tomato-ink: var(--tomato-ink);
+  --color-lime: var(--lime);
+  --color-lime-ink: var(--lime-ink);
+  --color-fridge-soft: var(--fridge-soft);
+  --color-fridge-ink: var(--fridge-ink);
+  --color-pantry-soft: var(--pantry-soft);
+  --color-pantry-ink: var(--pantry-ink);
+  --color-herb-soft: var(--herb-soft);
+  --color-herb-ink: var(--herb-ink);
+  --font-sans: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3 { text-wrap: balance; }
+
+:focus-visible {
+  outline: 3px solid var(--tomato);
+  outline-offset: 2px;
+}
+
+/* Radius rule: chips/toggles = pill, buttons/inputs = 12px, panels = 16px. */
+
+/* Keycap button: solid edge underneath, presses down on tap. */
+.key {
+  --key-face: var(--tomato);
+  --key-edge: var(--tomato-deep);
+  --key-text: oklch(1 0 0);
+  background: var(--key-face);
+  color: var(--key-text);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 var(--key-edge);
+  transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), filter 160ms ease;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.key-lime {
+  --key-face: var(--lime);
+  --key-edge: var(--lime-deep);
+  --key-text: var(--lime-ink);
+}
+.key-quiet {
+  --key-face: var(--surface-2);
+  --key-edge: var(--line);
+  --key-text: var(--ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .key:hover:not(:disabled) { filter: brightness(1.05); }
+}
+.key:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--key-edge);
+}
+.key:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.press {
+  transition: transform 140ms var(--ease-out), background-color 160ms ease, color 160ms ease;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+.press:active { transform: scale(0.96); }
+
+.field {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  padding: 0 14px;
+  font-size: 16px; /* no iOS zoom */
+  transition: border-color 160ms ease;
+}
+.field::placeholder { color: var(--muted); }
+.field:focus { outline: none; border-color: var(--tomato); }
+
+/* Skeleton shimmer for the recipe wait. */
+.shimmer {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface) 50%, var(--surface-2) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .key, .press { transition: filter 160ms ease, background-color 160ms ease; }
+  .key:active:not(:disabled) { transform: none; box-shadow: 0 4px 0 var(--key-edge); filter: brightness(0.92); }
+  .press:active { transform: none; }
+  .shimmer { animation: none; }
+}
