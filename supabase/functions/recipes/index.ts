@@ -1,7 +1,8 @@
 // Supabase Edge Function: POST /functions/v1/recipes
 // Secrets (Supabase → Edge Functions → Secrets): GROQ_API_KEY, optional MISTRAL_API_KEY,
 // GROQ_MODEL, MISTRAL_MODEL, AI_DAILY_LIMIT_PER_USER. SUPABASE_URL / SUPABASE_ANON_KEY are built in.
-import { createClient } from "npm:@supabase/supabase-js@2";
+// Pinned to the version the app uses, so a redeploy never silently pulls a different one.
+import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 import { buildPrompt, cleanAvoid, generateRecipes, markHave, providersFromEnv } from "./ai.ts";
 
 const ALLOWED_ORIGINS = ["https://lebmojica-byte.github.io", "http://localhost:3000"];
@@ -28,13 +29,21 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   // Acts as the signed-in user, so RLS limits every query to their own rows.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const jwt = authHeader.replace(/^Bearer\s+/i, "");
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+  // Pass the JWT explicitly: a bare getUser() looks for a stored session, which a server client doesn't have.
   const {
     data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return json({ error: "Please sign in." }, 401);
+    error: authError,
+  } = await supabase.auth.getUser(jwt);
+  if (!user) {
+    console.warn(JSON.stringify({ at: "recipes.auth", error: authError?.message ?? "no user" }));
+    return json({ error: "Please sign in." }, 401);
+  }
 
   const { data: allowed, error: quotaError } = await supabase.rpc("use_ai_quota", { daily_limit: DAILY_LIMIT });
   if (quotaError) {

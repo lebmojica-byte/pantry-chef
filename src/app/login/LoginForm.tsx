@@ -42,8 +42,10 @@ export default function LoginForm({ turnstileSiteKey }: { turnstileSiteKey: stri
       .auth.getSession()
       .then(({ data }) => {
         if (data.session) return router.replace("/");
-        const linkError = new URLSearchParams(location.search).get("error_description");
+        const params = new URLSearchParams(location.search);
+        const linkError = params.get("error_description");
         if (linkError) setMessage({ ok: false, text: `${linkError}. If you confirmed before, just sign in.` });
+        else if (params.has("expired")) setMessage({ ok: false, text: "Your login ended. Please sign in again." });
       });
   }, [router]);
 

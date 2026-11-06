@@ -12,21 +12,28 @@ type Loaded = { email: string; items: PantryItem[]; settings: Settings; tried: K
 export default function Home() {
   const router = useRouter();
   const [data, setData] = useState<Loaded | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
+    const load = () =>
+      Promise.all([
+        supabase.from("pantry_items").select("id, name, location").order("created_at"),
+        supabase.from("user_settings").select("diet, course, servings, only_my_ingredients").limit(1),
+        supabase.from("tried_recipes").select("id, title, recipe, at:tried_at").order("tried_at", { ascending: false }).limit(100),
+        supabase.from("saved_recipes").select("id, title, recipe, at:saved_at").order("saved_at", { ascending: false }).limit(200),
+      ]);
     (async () => {
       // getSession also finishes an email-confirmation ?code= exchange on this URL.
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) return router.replace(`/login${location.search}`);
-      const [{ data: items }, { data: settings }, { data: tried }, { data: saved }] = await Promise.all([
-        supabase.from("pantry_items").select("id, name, location").order("created_at"),
-        supabase.from("user_settings").select("diet, course, servings, only_my_ingredients").limit(1),
-        supabase.from("tried_recipes").select("id, title, recipe, at:tried_at").order("tried_at", { ascending: false }).limit(100),
-        supabase.from("saved_recipes").select("id, title, recipe, at:saved_at").order("saved_at", { ascending: false }).limit(200),
-      ]);
+      // Never show empty shelves because a load failed (seen once right after signing in): retry once, then say so.
+      let res = await load();
+      if (res.some((r) => r.error)) res = await new Promise<typeof res>((ok) => setTimeout(() => load().then(ok), 600));
+      if (res.some((r) => r.error)) return setLoadError(true);
+      const [{ data: items }, { data: settings }, { data: tried }, { data: saved }] = res;
       setData({
         email: session.user.email ?? "",
         items: (items ?? []) as PantryItem[],
@@ -37,6 +44,17 @@ export default function Home() {
     })();
   }, [router]);
 
+  if (loadError) {
+    return (
+      <main className="mx-auto flex min-h-[100dvh] max-w-sm flex-col justify-center px-6 text-center">
+        <h1 className="text-2xl font-bold">Couldn&apos;t load your kitchen</h1>
+        <p className="mt-2 text-muted">Your shelves are safe. Please check your connection and try again.</p>
+        <button onClick={() => location.reload()} className="key mt-6 min-h-12 w-full font-bold">
+          Try again
+        </button>
+      </main>
+    );
+  }
   if (!data) return <KitchenSkeleton />;
   return <Kitchen email={data.email} initialItems={data.items} initialSettings={data.settings} initialTried={data.tried} initialSaved={data.saved} />;
 }

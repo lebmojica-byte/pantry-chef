@@ -16,7 +16,7 @@ import {
 } from "@phosphor-icons/react";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { Recipe } from "@/lib/options";
 import { COURSES, DIETS, LOCATIONS, type Location, type PantryItem, type Settings, type KeptRecipe } from "@/lib/options";
@@ -55,6 +55,16 @@ export default function Kitchen(props: {
   const [seen, setSeen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const signingOut = useRef(false);
+
+  // The page keeps its data in memory, so without this an expired or revoked session would leave
+  // the kitchen on screen while every save fails with "permission denied".
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT" && !signingOut.current) router.replace("/login?expired=1");
+    });
+    return () => data.subscription.unsubscribe();
+  }, [router]);
 
   async function addItems(location: Location, text: string) {
     const have = new Set(items.map((i) => keyOf(i.location, i.name)));
@@ -192,7 +202,9 @@ export default function Kitchen(props: {
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    signingOut.current = true;
+    // "local": only this device. The default ("global") would end the login on every device too.
+    await supabase.auth.signOut({ scope: "local" });
     router.replace("/login");
   }
 
