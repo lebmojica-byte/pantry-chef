@@ -1,5 +1,5 @@
-:HL["/pantry-chef/_next/static/chunks/2krg22ixwvio0.css","style"]
+:HL["/pantry-chef/_next/static/chunks/33_2vnw1jl0ck.css","style"]
 :HC["/",""]
 2:[["children",{"s":"__PAGE__","h":160}]]
 1:[["children",{"s":"login","h":96,"c":"$Q2"}]]
-0:{"b":"kt77EHPp-ver5It_VdfkA","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
+0:{"b":"gC2T0YZTjfOK0OaHfglxT","t":{"t":{"s":"","h":80,"c":"$Q1"}}}
