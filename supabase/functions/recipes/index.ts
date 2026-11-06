@@ -2,7 +2,7 @@
 // Secrets (Supabase → Edge Functions → Secrets): GROQ_API_KEY, optional MISTRAL_API_KEY,
 // GROQ_MODEL, MISTRAL_MODEL, AI_DAILY_LIMIT_PER_USER. SUPABASE_URL / SUPABASE_ANON_KEY are built in.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { buildPrompt, generateRecipes, providersFromEnv } from "./ai.ts";
+import { buildPrompt, cleanAvoid, generateRecipes, markHave, providersFromEnv } from "./ai.ts";
 
 const ALLOWED_ORIGINS = ["https://lebmojica-byte.github.io", "http://localhost:3000"];
 const DAILY_LIMIT = Number(Deno.env.get("AI_DAILY_LIMIT_PER_USER")) || 30;
@@ -43,11 +43,16 @@ Deno.serve(async (req) => {
   }
   if (!allowed) return json({ error: `Daily limit of ${DAILY_LIMIT} recipe requests reached. Try again tomorrow.` }, 429);
 
-  const [{ data: items }, { data: settings }] = await Promise.all([
+  // Body (optional): { exclude: string[] } = titles already on screen ("3 more recipes").
+  const body = await req.json().catch(() => ({}));
+  const [{ data: items }, { data: settings }, { data: tried }] = await Promise.all([
     supabase.from("pantry_items").select("name, location").limit(MAX_ITEMS),
     supabase.from("user_settings").select("diet, course, servings, only_my_ingredients").limit(1),
+    supabase.from("tried_recipes").select("title").order("tried_at", { ascending: false }).limit(40),
   ]);
   if (!items?.length) return json({ error: "Add a few ingredients first." }, 400);
+  const avoid = cleanAvoid([...cleanAvoid(body?.exclude, 30), ...(tried ?? []).map((t) => t.title)], 60);
+  const avoidKeys = new Set(avoid.map((t) => t.toLowerCase()));
 
   const providers = providersFromEnv({
     GROQ_API_KEY: Deno.env.get("GROQ_API_KEY"),
@@ -62,9 +67,17 @@ Deno.serve(async (req) => {
 
   const started = Date.now();
   try {
-    const out = await generateRecipes(buildPrompt(items, settings?.[0] ?? DEFAULT_SETTINGS), providers);
-    console.log(JSON.stringify({ at: "recipes.ok", user: user.id, provider: out.provider, ms: Date.now() - started }));
-    return json(out);
+    const out = await generateRecipes(buildPrompt(items, settings?.[0] ?? DEFAULT_SETTINGS, avoid), providers);
+    // The model sometimes repeats anyway: drop exact title repeats here.
+    const recipes = markHave(
+      out.recipes.filter((r) => !avoidKeys.has(r.title.trim().toLowerCase())),
+      items.map((i) => i.name),
+    );
+    console.log(JSON.stringify({
+      at: "recipes.ok", user: user.id, provider: out.provider, ms: Date.now() - started,
+      avoided: avoid.length, repeatsDropped: out.recipes.length - recipes.length,
+    }));
+    return json({ provider: out.provider, recipes });
   } catch (e) {
     console.error(JSON.stringify({ at: "recipes.fail", user: user.id, ms: Date.now() - started, error: String(e) }));
     return json({ error: "The recipe AI is busy right now. Please try again." }, 502);

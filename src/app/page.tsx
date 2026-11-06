@@ -2,11 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { DEFAULT_SETTINGS, type PantryItem, type Settings } from "@/lib/options";
+import { DEFAULT_SETTINGS, type PantryItem, type Settings, type TriedRecipe } from "@/lib/options";
 import { createClient } from "@/lib/supabase/client";
 import Kitchen from "./Kitchen";
 
-type Loaded = { email: string; items: PantryItem[]; settings: Settings };
+type Loaded = { email: string; items: PantryItem[]; settings: Settings; tried: TriedRecipe[] };
 
 // Static page: the session lives in the browser, so the login check happens here.
 export default function Home() {
@@ -21,20 +21,22 @@ export default function Home() {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) return router.replace(`/login${location.search}`);
-      const [{ data: items }, { data: settings }] = await Promise.all([
+      const [{ data: items }, { data: settings }, { data: tried }] = await Promise.all([
         supabase.from("pantry_items").select("id, name, location").order("created_at"),
         supabase.from("user_settings").select("diet, course, servings, only_my_ingredients").limit(1),
+        supabase.from("tried_recipes").select("id, title, recipe, tried_at").order("tried_at", { ascending: false }).limit(100),
       ]);
       setData({
         email: session.user.email ?? "",
         items: (items ?? []) as PantryItem[],
         settings: (settings?.[0] as Settings | undefined) ?? DEFAULT_SETTINGS,
+        tried: (tried ?? []) as TriedRecipe[],
       });
     })();
   }, [router]);
 
   if (!data) return <KitchenSkeleton />;
-  return <Kitchen email={data.email} initialItems={data.items} initialSettings={data.settings} />;
+  return <Kitchen email={data.email} initialItems={data.items} initialSettings={data.settings} initialTried={data.tried} />;
 }
 
 function KitchenSkeleton() {

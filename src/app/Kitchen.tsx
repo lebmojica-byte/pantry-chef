@@ -17,9 +17,9 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/r
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { Recipe } from "@/lib/options";
-import { COURSES, DIETS, LOCATIONS, type Location, type PantryItem, type Settings } from "@/lib/options";
+import { COURSES, DIETS, LOCATIONS, type Location, type PantryItem, type Settings, type TriedRecipe } from "@/lib/options";
 import { createClient } from "@/lib/supabase/client";
-import Recipes from "./Recipes";
+import Recipes, { type Loading } from "./Recipes";
 
 const supabase = createClient();
 
@@ -37,12 +37,16 @@ export default function Kitchen(props: {
   email: string;
   initialItems: PantryItem[];
   initialSettings: Settings;
+  initialTried: TriedRecipe[];
 }) {
   const [items, setItems] = useState(props.initialItems);
   const [settings, setSettings] = useState(props.initialSettings);
   const [shelf, setShelf] = useState<Location>("fridge");
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<Loading>(null);
+  const [tried, setTried] = useState(props.initialTried);
+  // Every title shown this session, so "Find new" and "3 more" never repeat one.
+  const [seen, setSeen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -87,21 +91,61 @@ export default function Kitchen(props: {
     if (error) setError(`Couldn't save your settings: ${error.message}`);
   }
 
-  async function getRecipes() {
-    setLoading(true);
+  async function getRecipes(mode: "fresh" | "more") {
+    setLoading(mode);
     setError(null);
     try {
-      const { data, error } = await supabase.functions.invoke("recipes", { method: "POST" });
+      const { data, error } = await supabase.functions.invoke("recipes", {
+        method: "POST",
+        body: { exclude: seen.slice(-30) },
+      });
       if (error) {
         // FunctionsHttpError carries the function's JSON body ({ error }) in error.context.
         const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
         throw new Error(body?.error || "Something went wrong. Please try again.");
       }
-      setRecipes(data.recipes);
+      const fresh = data.recipes as Recipe[];
+      setSeen((prev) => [...prev, ...fresh.map((r) => r.title)]);
+      if (mode === "more") {
+        setRecipes((prev) => {
+          const have = new Set((prev ?? []).map((r) => r.title.toLowerCase()));
+          return [...(prev ?? []), ...fresh.filter((r) => !have.has(r.title.toLowerCase()))];
+        });
+        if (!fresh.length) setError("No new ideas this time. Try another type of dish.");
+      } else {
+        setRecipes(fresh);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      setLoading(null);
+    }
+  }
+
+  async function markTried(recipe: Recipe) {
+    // Optimistic: hide it now, show it in Tried; roll back if the save fails.
+    const temp: TriedRecipe = { id: `tmp-${recipe.title}`, title: recipe.title, recipe, tried_at: new Date().toISOString() };
+    setRecipes((prev) => prev?.filter((r) => r !== recipe) ?? prev);
+    setTried((prev) => [temp, ...prev.filter((t) => t.title.toLowerCase() !== recipe.title.toLowerCase())]);
+    const { data, error } = await supabase
+      .from("tried_recipes")
+      .insert({ title: recipe.title, recipe })
+      .select("id, title, recipe, tried_at");
+    if (error && error.code !== "23505") {
+      setTried((prev) => prev.filter((t) => t.id !== temp.id));
+      setRecipes((prev) => (prev ? [recipe, ...prev] : [recipe]));
+      return setError(`Couldn't save "${recipe.title}" as tried: ${error.message}`);
+    }
+    if (data?.[0]) setTried((prev) => prev.map((t) => (t.id === temp.id ? (data[0] as TriedRecipe) : t)));
+  }
+
+  async function untry(t: TriedRecipe) {
+    setTried((prev) => prev.filter((x) => x.id !== t.id));
+    if (t.id.startsWith("tmp-")) return;
+    const { error } = await supabase.from("tried_recipes").delete().eq("id", t.id);
+    if (error) {
+      setTried((prev) => [t, ...prev]);
+      setError(`Couldn't update "${t.title}": ${error.message}`);
     }
   }
 
@@ -158,12 +202,12 @@ export default function Kitchen(props: {
 
           <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg px-4 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 lg:static lg:z-auto lg:mt-6 lg:border-0 lg:bg-transparent lg:p-0">
             <button
-              onClick={getRecipes}
-              disabled={loading || !items.length}
+              onClick={() => getRecipes("fresh")}
+              disabled={loading !== null || !items.length}
               className="key mx-auto flex min-h-14 w-full max-w-6xl items-center justify-center gap-2.5 text-lg font-bold"
             >
-              <CookingPot size={26} weight="fill" className={loading ? "animate-bounce" : ""} aria-hidden />
-              {loading ? "Cooking up ideas" : recipes ? "Find new recipes" : "Find recipes"}
+              <CookingPot size={26} weight="fill" className={loading === "fresh" ? "animate-bounce" : ""} aria-hidden />
+              {loading === "fresh" ? "Cooking up ideas" : recipes ? "Find new recipes" : "Find recipes"}
             </button>
           </div>
 
@@ -188,7 +232,15 @@ export default function Kitchen(props: {
             )}
           </AnimatePresence>
 
-          <Recipes recipes={recipes} loading={loading} hasItems={items.length > 0} />
+          <Recipes
+            recipes={recipes}
+            loading={loading}
+            hasItems={items.length > 0}
+            tried={tried}
+            onTried={markTried}
+            onUntry={untry}
+            onMore={() => getRecipes("more")}
+          />
         </section>
       </main>
     </div>

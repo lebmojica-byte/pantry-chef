@@ -65,6 +65,8 @@ export type Recipe = {
   steps: string[];
 };
 
+export type TriedRecipe = { id: string; title: string; recipe: Recipe; tried_at: string };
+
 export const DEFAULT_SETTINGS: Settings = {
   diet: "any",
   course: "any",

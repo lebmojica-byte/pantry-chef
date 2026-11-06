@@ -1,38 +1,169 @@
 "use client";
 
-import { Basket, CaretDown, Check, CookingPot, Timer, Users } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwise,
+  Basket,
+  CaretDown,
+  Check,
+  CheckCircle,
+  ClockCounterClockwise,
+  CookingPot,
+  Plus,
+  Timer,
+  Users,
+} from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
-import type { Recipe } from "@/lib/options";
+import { useEffect, useId, useState } from "react";
+import type { Recipe, TriedRecipe } from "@/lib/options";
 
 const WAIT_LINES = ["Checking the fridge", "Sniffing the herbs", "Weighing the pasta", "Plating three ideas"];
 const EASE = [0.23, 1, 0.32, 1] as const;
 
-export default function Recipes(props: { recipes: Recipe[] | null; loading: boolean; hasItems: boolean }) {
+export type Loading = "fresh" | "more" | null;
+
+export default function Recipes(props: {
+  recipes: Recipe[] | null;
+  loading: Loading;
+  hasItems: boolean;
+  tried: TriedRecipe[];
+  onTried: (r: Recipe) => void;
+  onUntry: (t: TriedRecipe) => void;
+  onMore: () => void;
+}) {
+  const reduce = useReducedMotion();
+  const { recipes, loading } = props;
+
   return (
-    <div className="mt-8" aria-live="polite" aria-busy={props.loading}>
-      {props.loading ? (
-        <Waiting />
-      ) : props.recipes ? (
-        <ul className="space-y-4">
-          {props.recipes.map((r, i) => (
-            <RecipeCard key={`${r.title}-${i}`} recipe={r} index={i} />
-          ))}
-        </ul>
-      ) : (
-        <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-line px-6 py-10 text-center">
-          <span className="grid size-16 place-items-center rounded-full bg-lime text-lime-ink">
-            <CookingPot size={34} weight="fill" aria-hidden />
-          </span>
-          <h3 className="mt-4 text-xl font-bold">Your recipes land here</h3>
-          <p className="mt-1 max-w-xs text-muted">
-            {props.hasItems
-              ? "Pick a diet and a type of dish, then tap Find recipes."
-              : "Put a few things on your shelves first, then tap Find recipes."}
-          </p>
-        </div>
-      )}
+    <div className="mt-8">
+      <div aria-live="polite" aria-busy={loading !== null}>
+        {loading === "fresh" ? (
+          <Waiting />
+        ) : recipes ? (
+          <>
+            <ul className="space-y-4">
+              <AnimatePresence mode="popLayout" initial={false}>
+                {recipes.map((r, i) => (
+                  <motion.li
+                    key={r.title}
+                    layout={!reduce}
+                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, transition: { duration: 0.18 } }}
+                    transition={{ duration: 0.35, ease: EASE, delay: i < 3 ? i * 0.07 : 0 }}
+                  >
+                    <RecipeCard
+                      recipe={r}
+                      defaultOpen={i === 0}
+                      action={{ label: "Tried it", icon: <CheckCircle size={20} weight="bold" aria-hidden />, onClick: () => props.onTried(r) }}
+                    />
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+
+            {recipes.length === 0 && loading !== "more" && (
+              <p className="rounded-2xl bg-surface px-5 py-6 text-center text-muted">
+                All tried! Tap 3 more recipes for new ideas.
+              </p>
+            )}
+
+            {loading === "more" && <Skeletons className="mt-4" />}
+
+            <button
+              onClick={props.onMore}
+              disabled={loading !== null}
+              className="key key-quiet mt-5 flex min-h-13 w-full items-center justify-center gap-2 text-base font-bold"
+            >
+              <Plus size={20} weight="bold" aria-hidden />
+              {loading === "more" ? "Finding 3 more" : "3 more recipes"}
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-line px-6 py-10 text-center">
+            <span className="grid size-16 place-items-center rounded-full bg-lime text-lime-ink">
+              <CookingPot size={34} weight="fill" aria-hidden />
+            </span>
+            <h3 className="mt-4 text-xl font-bold">Your recipes land here</h3>
+            <p className="mt-1 max-w-xs text-muted">
+              {props.hasItems
+                ? "Pick a diet and a type of dish, then tap Find recipes."
+                : "Put a few things on your shelves first, then tap Find recipes."}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <TriedList tried={props.tried} onUntry={props.onUntry} />
     </div>
+  );
+}
+
+function TriedList({ tried, onUntry }: { tried: TriedRecipe[]; onUntry: (t: TriedRecipe) => void }) {
+  const reduce = useReducedMotion();
+  const [open, setOpen] = useState(false);
+  if (!tried.length) return null;
+  const fmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+
+  return (
+    <section aria-labelledby="tried-h" className="mt-10">
+      <h2 id="tried-h">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls="tried-list"
+          className="press flex min-h-12 w-full items-center gap-3 rounded-xl text-left"
+        >
+          <span className="grid size-10 place-items-center rounded-full bg-lime text-lime-ink">
+            <ClockCounterClockwise size={22} weight="bold" aria-hidden />
+          </span>
+          <span className="flex-1 text-2xl font-bold tracking-[-0.02em]">
+            Tried <span className="tabular-nums text-muted">{tried.length}</span>
+          </span>
+          <motion.span
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={{ duration: reduce ? 0 : 0.25, ease: EASE }}
+            className="grid size-10 place-items-center rounded-full bg-surface"
+          >
+            <CaretDown size={20} weight="bold" aria-hidden />
+            <span className="sr-only">{open ? "Hide tried recipes" : "Show tried recipes"}</span>
+          </motion.span>
+        </button>
+      </h2>
+      <p className="mt-1 pl-13 text-sm text-muted">These won&apos;t be suggested again.</p>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.ul
+            id="tried-list"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0, transition: { duration: 0.2, ease: EASE } }}
+            transition={{ duration: reduce ? 0 : 0.3, ease: EASE }}
+            className="space-y-3 overflow-hidden pt-4"
+          >
+            <AnimatePresence mode="popLayout" initial={false}>
+              {tried.map((t) => (
+                <motion.li
+                  key={t.id}
+                  layout={!reduce}
+                  exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, transition: { duration: 0.18 } }}
+                >
+                  <RecipeCard
+                    recipe={t.recipe}
+                    note={`Tried ${fmt.format(new Date(t.tried_at))}`}
+                    action={{
+                      label: "Suggest again",
+                      icon: <ArrowCounterClockwise size={20} weight="bold" aria-hidden />,
+                      onClick: () => onUntry(t),
+                    }}
+                  />
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </motion.ul>
+        )}
+      </AnimatePresence>
+    </section>
   );
 }
 
@@ -59,30 +190,43 @@ function Waiting() {
           </motion.p>
         </AnimatePresence>
       </div>
-      <ul className="mt-4 space-y-4" aria-hidden>
-        {[0, 1, 2].map((i) => (
-          <li key={i} className="rounded-2xl bg-surface p-5 sm:p-6">
-            <div className="shimmer h-7 w-3/5 rounded-lg" />
-            <div className="mt-3 flex gap-2">
-              <div className="shimmer h-8 w-20 rounded-full" />
-              <div className="shimmer h-8 w-24 rounded-full" />
-            </div>
-            <div className="shimmer mt-4 h-4 w-full rounded" />
-            <div className="shimmer mt-2 h-4 w-4/5 rounded" />
-          </li>
-        ))}
-      </ul>
+      <Skeletons className="mt-4" />
     </div>
   );
 }
 
-function RecipeCard({ recipe: r, index }: { recipe: Recipe; index: number }) {
+function Skeletons({ className = "" }: { className?: string }) {
+  return (
+    <ul className={`space-y-4 ${className}`} aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <li key={i} className="rounded-2xl bg-surface p-5 sm:p-6">
+          <div className="shimmer h-7 w-3/5 rounded-lg" />
+          <div className="mt-3 flex gap-2">
+            <div className="shimmer h-8 w-20 rounded-full" />
+            <div className="shimmer h-8 w-24 rounded-full" />
+          </div>
+          <div className="shimmer mt-4 h-4 w-full rounded" />
+          <div className="shimmer mt-2 h-4 w-4/5 rounded" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+
+function RecipeCard(props: {
+  recipe: Recipe;
+  defaultOpen?: boolean;
+  note?: string;
+  action: { label: string; icon: React.ReactNode; onClick: () => void };
+}) {
+  const { recipe: r } = props;
   const reduce = useReducedMotion();
-  const [open, setOpen] = useState(index === 0);
+  const [open, setOpen] = useState(Boolean(props.defaultOpen));
   const [done, setDone] = useState<Set<number>>(new Set());
+  const panelId = useId();
   const toBuy = r.ingredients.filter((i) => !i.have);
   const have = r.ingredients.filter((i) => i.have);
-  const panelId = `recipe-${index}`;
 
   function toggleStep(k: number) {
     setDone((prev) => {
@@ -94,22 +238,18 @@ function RecipeCard({ recipe: r, index }: { recipe: Recipe; index: number }) {
   }
 
   return (
-    <motion.li
-      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: EASE, delay: index * 0.07 }}
-      className="overflow-hidden rounded-2xl bg-surface"
-    >
+    <article className="overflow-hidden rounded-2xl bg-surface">
       <h3>
         <button
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
           aria-controls={panelId}
-          className="flex w-full items-start gap-3 p-5 text-left sm:p-6"
+          className="flex w-full items-start gap-3 p-5 pb-3 text-left sm:p-6 sm:pb-3"
         >
           <span className="flex-1">
             <span className="block text-2xl font-bold leading-tight tracking-[-0.02em]">{r.title}</span>
             <span className="mt-3 flex flex-wrap gap-2 text-sm font-semibold">
+              {props.note && <Pill className="bg-lime text-lime-ink">{props.note}</Pill>}
               <Pill className="bg-bg text-ink">
                 <Timer size={16} weight="bold" aria-hidden /> {r.time_minutes} min
               </Pill>
@@ -148,7 +288,7 @@ function RecipeCard({ recipe: r, index }: { recipe: Recipe; index: number }) {
             exit={{ height: 0, opacity: 0, transition: { duration: 0.2, ease: EASE } }}
             transition={{ duration: reduce ? 0 : 0.3, ease: EASE }}
           >
-            <div className="grid gap-6 border-t-2 border-bg px-5 pb-6 pt-5 sm:px-6">
+            <div className="mt-2 grid gap-6 border-t-2 border-bg px-5 pb-2 pt-5 sm:px-6">
               <div className="grid gap-5 sm:grid-cols-2">
                 {have.length > 0 && (
                   <IngredientList title="From your kitchen" items={have} icon={<Check size={14} weight="bold" aria-hidden />} tone="bg-lime text-lime-ink" />
@@ -195,7 +335,18 @@ function RecipeCard({ recipe: r, index }: { recipe: Recipe; index: number }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.li>
+
+      <div className="flex justify-end px-5 pb-5 pt-1 sm:px-6 sm:pb-6">
+        <button
+          onClick={props.action.onClick}
+          className="key key-quiet flex min-h-11 items-center gap-2 px-4 text-sm font-bold"
+          aria-label={`${props.action.label}: ${r.title}`}
+        >
+          {props.action.icon}
+          {props.action.label}
+        </button>
+      </div>
+    </article>
   );
 }
 
