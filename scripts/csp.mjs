@@ -4,6 +4,10 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import nextEnv from "@next/env";
+
+// Plain node doesn't read .env.local; Next's own loader does (same files as `next build`).
+nextEnv.loadEnvConfig(process.cwd());
 
 const OUT = "out";
 const SUPABASE = process.env.NEXT_PUBLIC_SUPABASE_URL;
