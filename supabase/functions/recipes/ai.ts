@@ -43,6 +43,8 @@ const DIET_RULE: Record<string, string> = {
   any: "Any diet is fine.",
   vegetarian: "Strictly vegetarian: no meat, poultry, fish or seafood (and no gelatin).",
   vegan: "Strictly vegan: no meat, fish, dairy, eggs, honey or any other animal product.",
+  high_protein:
+    "High protein: at least 30 g protein per serving. Build each dish around the protein-rich listed ingredients (eggs, meat, fish, dairy, legumes, tofu, nuts) and say the approximate protein per serving in the description.",
 };
 
 // Titles the user has already seen or tried; cleaned and capped so the prompt stays small.

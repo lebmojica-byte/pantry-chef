@@ -30,6 +30,7 @@ export const DIETS = [
   { id: "any", label: "Everything" },
   { id: "vegetarian", label: "Vegetarian" },
   { id: "vegan", label: "Vegan" },
+  { id: "high_protein", label: "High protein" },
 ] as const;
 
 export const COURSES = [
@@ -65,7 +66,8 @@ export type Recipe = {
   steps: string[];
 };
 
-export type TriedRecipe = { id: string; title: string; recipe: Recipe; tried_at: string };
+// A saved or tried recipe; "at" is saved_at / tried_at (aliased in the select).
+export type KeptRecipe = { id: string; title: string; recipe: Recipe; at: string };
 
 export const DEFAULT_SETTINGS: Settings = {
   diet: "any",

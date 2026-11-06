@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookmarkSimple,
   ChefHat,
   CookingPot,
   Jar,
@@ -16,10 +17,11 @@ import {
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import type { Recipe } from "@/lib/options";
-import { COURSES, DIETS, LOCATIONS, type Location, type PantryItem, type Settings, type TriedRecipe } from "@/lib/options";
+import { COURSES, DIETS, LOCATIONS, type Location, type PantryItem, type Settings, type KeptRecipe } from "@/lib/options";
 import { createClient } from "@/lib/supabase/client";
-import Recipes, { type Loading } from "./Recipes";
+import Recipes, { type ListId, type Loading } from "./Recipes";
 
 const supabase = createClient();
 
@@ -37,7 +39,8 @@ export default function Kitchen(props: {
   email: string;
   initialItems: PantryItem[];
   initialSettings: Settings;
-  initialTried: TriedRecipe[];
+  initialTried: KeptRecipe[];
+  initialSaved: KeptRecipe[];
 }) {
   const [items, setItems] = useState(props.initialItems);
   const [settings, setSettings] = useState(props.initialSettings);
@@ -45,6 +48,9 @@ export default function Kitchen(props: {
   const [recipes, setRecipes] = useState<Recipe[] | null>(null);
   const [loading, setLoading] = useState<Loading>(null);
   const [tried, setTried] = useState(props.initialTried);
+  const [saved, setSaved] = useState(props.initialSaved);
+  const [listOpen, setListOpen] = useState<Record<ListId, boolean>>({ saved: false, tried: false });
+  const [instantOpen, setInstantOpen] = useState(false);
   // Every title shown this session, so "Find new" and "3 more" never repeat one.
   const [seen, setSeen] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -124,22 +130,58 @@ export default function Kitchen(props: {
 
   async function markTried(recipe: Recipe) {
     // Optimistic: hide it now, show it in Tried; roll back if the save fails.
-    const temp: TriedRecipe = { id: `tmp-${recipe.title}`, title: recipe.title, recipe, tried_at: new Date().toISOString() };
+    const temp: KeptRecipe = { id: `tmp-${recipe.title}`, title: recipe.title, recipe, at: new Date().toISOString() };
     setRecipes((prev) => prev?.filter((r) => r !== recipe) ?? prev);
     setTried((prev) => [temp, ...prev.filter((t) => t.title.toLowerCase() !== recipe.title.toLowerCase())]);
     const { data, error } = await supabase
       .from("tried_recipes")
       .insert({ title: recipe.title, recipe })
-      .select("id, title, recipe, tried_at");
+      .select("id, title, recipe, at:tried_at");
     if (error && error.code !== "23505") {
       setTried((prev) => prev.filter((t) => t.id !== temp.id));
       setRecipes((prev) => (prev ? [recipe, ...prev] : [recipe]));
       return setError(`Couldn't save "${recipe.title}" as tried: ${error.message}`);
     }
-    if (data?.[0]) setTried((prev) => prev.map((t) => (t.id === temp.id ? (data[0] as TriedRecipe) : t)));
+    if (data?.[0]) setTried((prev) => prev.map((t) => (t.id === temp.id ? (data[0] as KeptRecipe) : t)));
   }
 
-  async function untry(t: TriedRecipe) {
+  async function saveRecipe(recipe: Recipe) {
+    // Optimistic: the card turns "Saved" at once; roll back if the save fails.
+    if (saved.some((s) => s.title.toLowerCase() === recipe.title.toLowerCase())) return;
+    const temp: KeptRecipe = { id: `tmp-${recipe.title}`, title: recipe.title, recipe, at: new Date().toISOString() };
+    setSaved((prev) => [temp, ...prev]);
+    const { data, error } = await supabase
+      .from("saved_recipes")
+      .insert({ title: recipe.title, recipe })
+      .select("id, title, recipe, at:saved_at");
+    if (error && error.code !== "23505") {
+      setSaved((prev) => prev.filter((s) => s.id !== temp.id));
+      return setError(`Couldn't save "${recipe.title}": ${error.message}`);
+    }
+    if (data?.[0]) setSaved((prev) => prev.map((s) => (s.id === temp.id ? (data[0] as KeptRecipe) : s)));
+  }
+
+  async function unsave(k: KeptRecipe) {
+    setSaved((prev) => prev.filter((s) => s.id !== k.id));
+    if (k.id.startsWith("tmp-")) return;
+    const { error } = await supabase.from("saved_recipes").delete().eq("id", k.id);
+    if (error) {
+      setSaved((prev) => [k, ...prev]);
+      setError(`Couldn't remove "${k.title}": ${error.message}`);
+    }
+  }
+
+  function openMyRecipes() {
+    // Open without the height animation and commit synchronously, so the page already has its
+    // full height when we jump (a smooth scroll or an animated open made the jump land short).
+    flushSync(() => {
+      setInstantOpen(true);
+      setListOpen((o) => ({ ...o, saved: true }));
+    });
+    document.getElementById("saved-section")?.scrollIntoView({ block: "start" });
+  }
+
+  async function untry(t: KeptRecipe) {
     setTried((prev) => prev.filter((x) => x.id !== t.id));
     if (t.id.startsWith("tmp-")) return;
     const { error } = await supabase.from("tried_recipes").delete().eq("id", t.id);
@@ -164,8 +206,18 @@ export default function Kitchen(props: {
             <ChefHat size={28} weight="fill" className="text-tomato" aria-hidden />
             Pantry Chef
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted sm:inline">{props.email}</span>
+          <div className="flex items-center gap-1 sm:gap-3">
+            <button
+              onClick={openMyRecipes}
+              disabled={!saved.length}
+              className="press flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-ink hover:bg-surface-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
+              aria-label={`My recipes, ${saved.length} saved`}
+            >
+              <BookmarkSimple size={20} weight={saved.length ? "fill" : "regular"} className={saved.length ? "text-tomato" : ""} aria-hidden />
+              My recipes
+              <span className="tabular-nums text-muted">{saved.length}</span>
+            </button>
+            <span className="hidden text-sm text-muted lg:inline">{props.email}</span>
             <button
               onClick={signOut}
               className="press flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-muted hover:bg-surface-2 hover:text-ink"
@@ -236,7 +288,16 @@ export default function Kitchen(props: {
             recipes={recipes}
             loading={loading}
             hasItems={items.length > 0}
+            saved={saved}
             tried={tried}
+            open={listOpen}
+            onToggle={(id) => {
+              setInstantOpen(false);
+              setListOpen((o) => ({ ...o, [id]: !o[id] }));
+            }}
+            instantOpen={instantOpen}
+            onSave={saveRecipe}
+            onUnsave={unsave}
             onTried={markTried}
             onUntry={untry}
             onMore={() => getRecipes("more")}
@@ -421,7 +482,7 @@ function Preferences({ settings, onChange }: { settings: Settings; onChange: (p:
     <div className="mt-4 space-y-6 rounded-2xl bg-surface p-4 sm:p-5">
       <fieldset>
         <legend className="text-sm font-bold">Diet</legend>
-        <div className="mt-2 grid grid-cols-3 rounded-full bg-surface-2 p-1">
+        <div className="mt-2 grid grid-cols-2 gap-1 rounded-3xl bg-surface-2 p-1 sm:grid-cols-4 sm:gap-0 sm:rounded-full">
           {DIETS.map((d) => {
             const active = settings.diet === d.id;
             return (

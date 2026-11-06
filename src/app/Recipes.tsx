@@ -3,6 +3,7 @@
 import {
   ArrowCounterClockwise,
   Basket,
+  BookmarkSimple,
   CaretDown,
   Check,
   CheckCircle,
@@ -10,28 +11,39 @@ import {
   CookingPot,
   Plus,
   Timer,
+  Trash,
   Users,
 } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useState } from "react";
-import type { Recipe, TriedRecipe } from "@/lib/options";
+import type { KeptRecipe, Recipe } from "@/lib/options";
+
+type Action = { label: string; icon: React.ReactNode; onClick: () => void; pressed?: boolean; disabled?: boolean };
 
 const WAIT_LINES = ["Checking the fridge", "Sniffing the herbs", "Weighing the pasta", "Plating three ideas"];
 const EASE = [0.23, 1, 0.32, 1] as const;
 
 export type Loading = "fresh" | "more" | null;
+export type ListId = "saved" | "tried";
 
 export default function Recipes(props: {
   recipes: Recipe[] | null;
   loading: Loading;
   hasItems: boolean;
-  tried: TriedRecipe[];
+  saved: KeptRecipe[];
+  tried: KeptRecipe[];
+  open: Record<ListId, boolean>;
+  onToggle: (id: ListId) => void;
+  instantOpen: boolean;
+  onSave: (r: Recipe) => void;
+  onUnsave: (k: KeptRecipe) => void;
   onTried: (r: Recipe) => void;
-  onUntry: (t: TriedRecipe) => void;
+  onUntry: (k: KeptRecipe) => void;
   onMore: () => void;
 }) {
   const reduce = useReducedMotion();
   const { recipes, loading } = props;
+  const savedTitles = new Set(props.saved.map((k) => k.title.toLowerCase()));
 
   return (
     <div className="mt-8">
@@ -42,22 +54,34 @@ export default function Recipes(props: {
           <>
             <ul className="space-y-4">
               <AnimatePresence mode="popLayout" initial={false}>
-                {recipes.map((r, i) => (
-                  <motion.li
-                    key={r.title}
-                    layout={!reduce}
-                    initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, transition: { duration: 0.18 } }}
-                    transition={{ duration: 0.35, ease: EASE, delay: i < 3 ? i * 0.07 : 0 }}
-                  >
-                    <RecipeCard
-                      recipe={r}
-                      defaultOpen={i === 0}
-                      action={{ label: "Tried it", icon: <CheckCircle size={20} weight="bold" aria-hidden />, onClick: () => props.onTried(r) }}
-                    />
-                  </motion.li>
-                ))}
+                {recipes.map((r, i) => {
+                  const isSaved = savedTitles.has(r.title.toLowerCase());
+                  return (
+                    <motion.li
+                      key={r.title}
+                      layout={!reduce}
+                      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, transition: { duration: 0.18 } }}
+                      transition={{ duration: 0.35, ease: EASE, delay: i < 3 ? i * 0.07 : 0 }}
+                    >
+                      <RecipeCard
+                        recipe={r}
+                        defaultOpen={i === 0}
+                        actions={[
+                          {
+                            label: isSaved ? "Saved" : "Save",
+                            icon: <BookmarkSimple size={20} weight={isSaved ? "fill" : "bold"} aria-hidden />,
+                            pressed: isSaved,
+                            disabled: isSaved,
+                            onClick: () => props.onSave(r),
+                          },
+                          { label: "Tried it", icon: <CheckCircle size={20} weight="bold" aria-hidden />, onClick: () => props.onTried(r) },
+                        ]}
+                      />
+                    </motion.li>
+                  );
+                })}
               </AnimatePresence>
             </ul>
 
@@ -93,69 +117,100 @@ export default function Recipes(props: {
         )}
       </div>
 
-      <TriedList tried={props.tried} onUntry={props.onUntry} />
+      <KeptList
+        id="saved"
+        title="My recipes"
+        hint="Recipes you saved to cook again."
+        icon={<BookmarkSimple size={22} weight="fill" aria-hidden />}
+        tone="bg-tomato-soft text-tomato-ink"
+        datePrefix="Saved"
+        entries={props.saved}
+        open={props.open.saved}
+        onToggle={() => props.onToggle("saved")}
+        instant={props.instantOpen}
+        action={(k) => ({ label: "Remove", icon: <Trash size={20} weight="bold" aria-hidden />, onClick: () => props.onUnsave(k) })}
+      />
+      <KeptList
+        id="tried"
+        title="Tried"
+        hint="These won&apos;t be suggested again."
+        icon={<ClockCounterClockwise size={22} weight="bold" aria-hidden />}
+        tone="bg-lime text-lime-ink"
+        datePrefix="Tried"
+        entries={props.tried}
+        open={props.open.tried}
+        onToggle={() => props.onToggle("tried")}
+        instant={false}
+        action={(k) => ({ label: "Suggest again", icon: <ArrowCounterClockwise size={20} weight="bold" aria-hidden />, onClick: () => props.onUntry(k) })}
+      />
     </div>
   );
 }
 
-function TriedList({ tried, onUntry }: { tried: TriedRecipe[]; onUntry: (t: TriedRecipe) => void }) {
+function KeptList(props: {
+  id: ListId;
+  title: string;
+  hint: string;
+  icon: React.ReactNode;
+  tone: string;
+  datePrefix: string;
+  entries: KeptRecipe[];
+  open: boolean;
+  onToggle: () => void;
+  instant: boolean;
+  action: (k: KeptRecipe) => Action;
+}) {
   const reduce = useReducedMotion();
-  const [open, setOpen] = useState(false);
-  if (!tried.length) return null;
+  if (!props.entries.length) return null;
   const fmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+  const listId = `${props.id}-list`;
 
   return (
-    <section aria-labelledby="tried-h" className="mt-10">
-      <h2 id="tried-h">
+    <section id={`${props.id}-section`} aria-labelledby={`${props.id}-h`} className="mt-10 scroll-mt-20">
+      <h2 id={`${props.id}-h`}>
         <button
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-controls="tried-list"
+          onClick={props.onToggle}
+          aria-expanded={props.open}
+          aria-controls={listId}
           className="press flex min-h-12 w-full items-center gap-3 rounded-xl text-left"
         >
-          <span className="grid size-10 place-items-center rounded-full bg-lime text-lime-ink">
-            <ClockCounterClockwise size={22} weight="bold" aria-hidden />
-          </span>
+          <span className={`grid size-10 place-items-center rounded-full ${props.tone}`}>{props.icon}</span>
           <span className="flex-1 text-2xl font-bold tracking-[-0.02em]">
-            Tried <span className="tabular-nums text-muted">{tried.length}</span>
+            {props.title} <span className="tabular-nums text-muted">{props.entries.length}</span>
           </span>
           <motion.span
-            animate={{ rotate: open ? 180 : 0 }}
+            animate={{ rotate: props.open ? 180 : 0 }}
             transition={{ duration: reduce ? 0 : 0.25, ease: EASE }}
             className="grid size-10 place-items-center rounded-full bg-surface"
           >
             <CaretDown size={20} weight="bold" aria-hidden />
-            <span className="sr-only">{open ? "Hide tried recipes" : "Show tried recipes"}</span>
+            <span className="sr-only">{props.open ? `Hide ${props.title}` : `Show ${props.title}`}</span>
           </motion.span>
         </button>
       </h2>
-      <p className="mt-1 pl-13 text-sm text-muted">These won&apos;t be suggested again.</p>
+      <p className="mt-1 pl-13 text-sm text-muted">{props.hint}</p>
 
       <AnimatePresence initial={false}>
-        {open && (
+        {props.open && (
           <motion.ul
-            id="tried-list"
-            initial={{ height: 0, opacity: 0 }}
+            id={listId}
+            initial={props.instant ? false : { height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0, transition: { duration: 0.2, ease: EASE } }}
             transition={{ duration: reduce ? 0 : 0.3, ease: EASE }}
             className="space-y-3 overflow-hidden pt-4"
           >
             <AnimatePresence mode="popLayout" initial={false}>
-              {tried.map((t) => (
+              {props.entries.map((k) => (
                 <motion.li
-                  key={t.id}
+                  key={k.id}
                   layout={!reduce}
                   exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, transition: { duration: 0.18 } }}
                 >
                   <RecipeCard
-                    recipe={t.recipe}
-                    note={`Tried ${fmt.format(new Date(t.tried_at))}`}
-                    action={{
-                      label: "Suggest again",
-                      icon: <ArrowCounterClockwise size={20} weight="bold" aria-hidden />,
-                      onClick: () => onUntry(t),
-                    }}
+                    recipe={k.recipe}
+                    note={`${props.datePrefix} ${fmt.format(new Date(k.at))}`}
+                    actions={[props.action(k)]}
                   />
                 </motion.li>
               ))}
@@ -218,7 +273,7 @@ function RecipeCard(props: {
   recipe: Recipe;
   defaultOpen?: boolean;
   note?: string;
-  action: { label: string; icon: React.ReactNode; onClick: () => void };
+  actions: Action[];
 }) {
   const { recipe: r } = props;
   const reduce = useReducedMotion();
@@ -336,15 +391,20 @@ function RecipeCard(props: {
         )}
       </AnimatePresence>
 
-      <div className="flex justify-end px-5 pb-5 pt-1 sm:px-6 sm:pb-6">
-        <button
-          onClick={props.action.onClick}
-          className="key key-quiet flex min-h-11 items-center gap-2 px-4 text-sm font-bold"
-          aria-label={`${props.action.label}: ${r.title}`}
-        >
-          {props.action.icon}
-          {props.action.label}
-        </button>
+      <div className="flex flex-wrap justify-end gap-2 px-5 pb-5 pt-1 sm:px-6 sm:pb-6">
+        {props.actions.map((a) => (
+          <button
+            key={a.label}
+            onClick={a.onClick}
+            disabled={a.disabled}
+            aria-pressed={a.pressed}
+            aria-label={`${a.label}: ${r.title}`}
+            className={`key flex min-h-11 items-center gap-2 px-4 text-sm font-bold ${a.pressed ? "" : "key-quiet"}`}
+          >
+            {a.icon}
+            {a.label}
+          </button>
+        ))}
       </div>
     </article>
   );

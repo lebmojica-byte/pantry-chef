@@ -9,6 +9,13 @@ test("cleanAvoid dedupes, trims, caps and ignores junk", () => {
   assert.equal(cleanAvoid(Array.from({ length: 100 }, (_, i) => `R${i}`), 30).length, 30);
 });
 
+test("buildPrompt has a high-protein rule", () => {
+  const { user } = buildPrompt([{ name: "eggs", location: "fridge" }], {
+    diet: "high_protein", course: "any", servings: 2, only_my_ingredients: false,
+  });
+  assert.match(user, /at least 30 g protein per serving/);
+});
+
 test("buildPrompt lists recipes to avoid only when there are some", () => {
   const prefs = { diet: "any", course: "any", servings: 2, only_my_ingredients: false };
   const items = [{ name: "rice", location: "pantry" }];

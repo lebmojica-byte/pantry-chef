@@ -2,11 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { DEFAULT_SETTINGS, type PantryItem, type Settings, type TriedRecipe } from "@/lib/options";
+import { DEFAULT_SETTINGS, type PantryItem, type Settings, type KeptRecipe } from "@/lib/options";
 import { createClient } from "@/lib/supabase/client";
 import Kitchen from "./Kitchen";
 
-type Loaded = { email: string; items: PantryItem[]; settings: Settings; tried: TriedRecipe[] };
+type Loaded = { email: string; items: PantryItem[]; settings: Settings; tried: KeptRecipe[]; saved: KeptRecipe[] };
 
 // Static page: the session lives in the browser, so the login check happens here.
 export default function Home() {
@@ -21,22 +21,24 @@ export default function Home() {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) return router.replace(`/login${location.search}`);
-      const [{ data: items }, { data: settings }, { data: tried }] = await Promise.all([
+      const [{ data: items }, { data: settings }, { data: tried }, { data: saved }] = await Promise.all([
         supabase.from("pantry_items").select("id, name, location").order("created_at"),
         supabase.from("user_settings").select("diet, course, servings, only_my_ingredients").limit(1),
-        supabase.from("tried_recipes").select("id, title, recipe, tried_at").order("tried_at", { ascending: false }).limit(100),
+        supabase.from("tried_recipes").select("id, title, recipe, at:tried_at").order("tried_at", { ascending: false }).limit(100),
+        supabase.from("saved_recipes").select("id, title, recipe, at:saved_at").order("saved_at", { ascending: false }).limit(200),
       ]);
       setData({
         email: session.user.email ?? "",
         items: (items ?? []) as PantryItem[],
         settings: (settings?.[0] as Settings | undefined) ?? DEFAULT_SETTINGS,
-        tried: (tried ?? []) as TriedRecipe[],
+        tried: (tried ?? []) as KeptRecipe[],
+        saved: (saved ?? []) as KeptRecipe[],
       });
     })();
   }, [router]);
 
   if (!data) return <KitchenSkeleton />;
-  return <Kitchen email={data.email} initialItems={data.items} initialSettings={data.settings} initialTried={data.tried} />;
+  return <Kitchen email={data.email} initialItems={data.items} initialSettings={data.settings} initialTried={data.tried} initialSaved={data.saved} />;
 }
 
 function KitchenSkeleton() {

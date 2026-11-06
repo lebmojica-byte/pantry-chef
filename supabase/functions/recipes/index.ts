@@ -45,13 +45,17 @@ Deno.serve(async (req) => {
 
   // Body (optional): { exclude: string[] } = titles already on screen ("3 more recipes").
   const body = await req.json().catch(() => ({}));
-  const [{ data: items }, { data: settings }, { data: tried }] = await Promise.all([
+  const [{ data: items }, { data: settings }, { data: tried }, { data: saved }] = await Promise.all([
     supabase.from("pantry_items").select("name, location").limit(MAX_ITEMS),
     supabase.from("user_settings").select("diet, course, servings, only_my_ingredients").limit(1),
     supabase.from("tried_recipes").select("title").order("tried_at", { ascending: false }).limit(40),
+    supabase.from("saved_recipes").select("title").order("saved_at", { ascending: false }).limit(40),
   ]);
   if (!items?.length) return json({ error: "Add a few ingredients first." }, 400);
-  const avoid = cleanAvoid([...cleanAvoid(body?.exclude, 30), ...(tried ?? []).map((t) => t.title)], 60);
+  const avoid = cleanAvoid(
+    [...cleanAvoid(body?.exclude, 30), ...[...(tried ?? []), ...(saved ?? [])].map((t) => t.title)],
+    80,
+  );
   const avoidKeys = new Set(avoid.map((t) => t.toLowerCase()));
 
   const providers = providersFromEnv({
